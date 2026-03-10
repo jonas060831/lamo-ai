@@ -1,0 +1,12 @@
+#env variables
+.env
+
+#training data
+my_knowledge
+
+#persist data
+db
+
+#do not include cache
+__pycache__/
+*.pyc
