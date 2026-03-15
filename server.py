@@ -1,14 +1,14 @@
 from dotenv import load_dotenv
 load_dotenv()
-from flask import Flask, request, jsonify, after_this_request, send_file
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceBgeEmbeddings
 import ollama
 import os
 from utils.sessions_helper import get_or_create_session, cleanup_old_sessions, build_history_context, save_to_history
-import uuid
-from TTS.api import TTS
+from utils.generate_tts import generate_tts
+
 
 app = Flask(__name__)
 CORS(app)
@@ -22,10 +22,6 @@ session_timestamps = {}
 #load embeddings and database once server starts
 embeddings = HuggingFaceBgeEmbeddings()
 db = Chroma(persist_directory="./db", embedding_function=embeddings)
-
-
-# this model allow you to use a different voice
-tts = TTS(model_name="tts_models/en/vctk/vits")
 
 @app.route('/clear-history', methods=['POST'])
 def clear_history():
@@ -153,10 +149,14 @@ def voice_query():
             prompt = f"{history_context}Question: {question}\n\nAnswer:"
             result = ollama.generate(model=model, prompt=prompt)
             
+            #turn response to audio file
+            audio_base64 = generate_tts(result['response'])
+            
             save_to_history(chat_sessions, session_id, question, result['response'])
             
             return jsonify({
                 "answer": result['response'],
+                "audio" : audio_base64,
                 "used_context": False,
                 "message": "No relevant training data found, answered from general knowledge",
                 "session_id": session_id
@@ -164,25 +164,6 @@ def voice_query():
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    
-@app.route('/speak', methods=["POST"])
-def speak():
-
-    text = request.json["text"]
-    filename = f"{uuid.uuid4()}.wav"
-
-    tts.tts_to_file(text=text,speaker="p251", file_path=filename)
-
-     # delete the file after
-    @after_this_request
-    def remove_file(response):
-        try:
-            os.remove(filename)
-        except Exception as e:
-            print("Error deleting file: ", e)
-        return response
-
-    return send_file(filename, mimetype="audio/wav")
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT, debug=True)
