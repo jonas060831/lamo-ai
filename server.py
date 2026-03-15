@@ -170,8 +170,6 @@ Answer:
 
                 web_results = searxng_search(question)
 
-                print("WEB RESULTS:", web_results[:2] if web_results else [])
-
                 if not web_results:
                     prompt = f"""
 {history_context}
