@@ -1,4 +1,18 @@
 import ollama
+import re
+
+def replace_code_blocks(text):
+
+    def replacer(match):
+        language = match.group(1)
+
+        if language:
+            return f"{language.strip()} example below."
+        else:
+            return "programming example below."
+
+    return re.sub(r"```(\w+)?[\s\S]*?```", replacer, text)
+    
 
 def is_coding_question(question, model="mistral"):
     prompt = f"""

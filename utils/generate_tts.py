@@ -1,21 +1,21 @@
-import base64
 import uuid
-import os
-from TTS.api import TTS
-
-
-# this model allow you to use a different voice
 import re
-import uuid
 import os
 import base64
 from TTS.api import TTS
-
+from utils.is_coding_question import replace_code_blocks
 tts = TTS(model_name="tts_models/en/vctk/vits")
 
+
+
+
 def generate_tts(text):
-    # Replace URLs with "link provided. for you."
-    cleaned_text = re.sub(r'https?://[^\s]+', 'link provided. for you.', text)
+
+    # Replace URLs
+    cleaned_text = re.sub(r'https?://[^\s]+', 'link provided for you.', text)
+
+    # Replace code blocks
+    cleaned_text = replace_code_blocks(cleaned_text)
 
     filename = f"{uuid.uuid4()}.wav"
 
