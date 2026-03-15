@@ -9,7 +9,7 @@ import os
 from utils.sessions_helper import get_or_create_session, cleanup_old_sessions, build_history_context, save_to_history
 from utils.generate_tts import generate_tts
 from utils.searxng import searxng_search, should_search
-
+from utils.is_coding_question import is_coding_question
 app = Flask(__name__)
 CORS(app)
 PORT = os.getenv('PORT', 3000)
@@ -104,7 +104,6 @@ def smart_query():
 
 @app.route('/voice-query', methods=['POST'])
 def voice_query():
-    # Intelligently decides whether to use context or not, with chat history
     try:
         data = request.get_json()
 
@@ -116,22 +115,18 @@ def voice_query():
         model = data.get('model', 'mistral')
         threshold = data.get('threshold', 0.5)
 
-        # auto generate session ID if not provided
         session_id = get_or_create_session(chat_sessions, data.get('session_id'))
         session_timestamps[session_id] = __import__('datetime').datetime.now()
 
-        # cleanup old sessions occasionally SESSION_TIMEOUT_HOURS is set to 2 hours
         cleanup_old_sessions(chat_sessions, session_timestamps)
 
-        # Search for relevant documents
         docs = db.similarity_search_with_score(question, k=k)
 
-        # Check if we have relevant context
         has_relevant_context = len(docs) > 0 and docs[0][1] < threshold
         history_context = build_history_context(chat_sessions, session_id)
 
         if has_relevant_context:
-            # Use context from training data
+
             context = "\n\n".join([doc.page_content for doc, score in docs])
 
             prompt = f"""
@@ -161,8 +156,13 @@ Answer:
 
         else:
 
-            # decide if web search is needed
-            search_needed = should_search(question, model)
+            # detect if this is a coding question
+            coding_question = is_coding_question(question, model)
+
+            if coding_question:
+                search_needed = False
+            else:
+                search_needed = should_search(question, model)
 
             if search_needed:
 
@@ -197,7 +197,6 @@ Answer:
 """
 
                 result = ollama.generate(model=model, prompt=prompt)
-
                 answer = result['response']
                 audio_base64 = generate_tts(answer)
 
@@ -211,7 +210,7 @@ Answer:
                 })
 
             else:
-                # fallback to model knowledge
+
                 prompt = f"""
 {history_context}
 Question: {question}
