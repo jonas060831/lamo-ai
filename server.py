@@ -8,7 +8,7 @@ import ollama
 import os
 from utils.sessions_helper import get_or_create_session, cleanup_old_sessions, build_history_context, save_to_history
 from utils.generate_tts import generate_tts
-
+from utils.searxng import searxng_search, should_search
 
 app = Flask(__name__)
 CORS(app)
@@ -104,64 +104,138 @@ def smart_query():
 
 @app.route('/voice-query', methods=['POST'])
 def voice_query():
-    #Intelligently decides whether to use context or not, with chat history
+    # Intelligently decides whether to use context or not, with chat history
     try:
         data = request.get_json()
-        
+
         if not data or 'question' not in data:
             return jsonify({"error": "No question provided"}), 400
-        
+
         question = data['question']
         k = data.get('k', 3)
         model = data.get('model', 'mistral')
         threshold = data.get('threshold', 0.5)
-        
-        #auto generate session ID if not provided
+
+        # auto generate session ID if not provided
         session_id = get_or_create_session(chat_sessions, data.get('session_id'))
         session_timestamps[session_id] = __import__('datetime').datetime.now()
 
-        #cleanup old sessions occasionally SESSION_TIMEOUT_HOURS is set to 2 hours
+        # cleanup old sessions occasionally SESSION_TIMEOUT_HOURS is set to 2 hours
         cleanup_old_sessions(chat_sessions, session_timestamps)
 
         # Search for relevant documents
         docs = db.similarity_search_with_score(question, k=k)
-        
+
         # Check if we have relevant context
         has_relevant_context = len(docs) > 0 and docs[0][1] < threshold
         history_context = build_history_context(chat_sessions, session_id)
-        
+
         if has_relevant_context:
             # Use context from training data
             context = "\n\n".join([doc.page_content for doc, score in docs])
-            prompt = f"{history_context}Based on the following context and our conversation history, answer the question. If the context doesn't contain relevant information, you can answer from your general knowledge.\n\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
+
+            prompt = f"""
+{history_context}
+Based on the following context and our conversation history, answer the question.
+If the context doesn't contain relevant information, you can answer from your general knowledge.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:
+"""
+
             result = ollama.generate(model=model, prompt=prompt)
-            
-            save_to_history(chat_sessions, session_id, question, result['response'])
-            
+            answer = result['response']
+
+            save_to_history(chat_sessions, session_id, question, answer)
+
             return jsonify({
-                "answer": result['response'],
+                "answer": answer,
                 "used_context": True,
                 "relevance_score": float(docs[0][1]),
                 "session_id": session_id
             })
+
         else:
-            # No relevant context, just answer generally with history
-            prompt = f"{history_context}Question: {question}\n\nAnswer:"
-            result = ollama.generate(model=model, prompt=prompt)
-            
-            #turn response to audio file
-            audio_base64 = generate_tts(result['response'])
-            
-            save_to_history(chat_sessions, session_id, question, result['response'])
-            
-            return jsonify({
-                "answer": result['response'],
-                "audio" : audio_base64,
-                "used_context": False,
-                "message": "No relevant training data found, answered from general knowledge",
-                "session_id": session_id
-            })
-    
+
+            # decide if web search is needed
+            search_needed = should_search(question, model)
+
+            if search_needed:
+
+                print("SEARCH DECISION:", search_needed)
+
+                web_results = searxng_search(question)
+
+                print("WEB RESULTS:", web_results[:2] if web_results else [])
+
+                if not web_results:
+                    prompt = f"""
+{history_context}
+Question: {question}
+
+Answer:
+"""
+                else:
+                    web_context = "\n\n".join([
+                        f"{r.get('title','')}\n{r.get('content','')}\n{r.get('url','')}"
+                        for r in web_results
+                    ])
+
+                    prompt = f"""
+{history_context}
+
+Use the following web search results to answer the question.
+
+Web Results:
+{web_context}
+
+Question: {question}
+
+Answer:
+"""
+
+                result = ollama.generate(model=model, prompt=prompt)
+
+                answer = result['response']
+                audio_base64 = generate_tts(answer)
+
+                save_to_history(chat_sessions, session_id, question, answer)
+
+                return jsonify({
+                    "answer": answer,
+                    "audio": audio_base64,
+                    "used_web_search": True,
+                    "session_id": session_id
+                })
+
+            else:
+                # fallback to model knowledge
+                prompt = f"""
+{history_context}
+Question: {question}
+
+Answer:
+"""
+
+                result = ollama.generate(model=model, prompt=prompt)
+
+                answer = result['response']
+                audio_base64 = generate_tts(answer)
+
+                save_to_history(chat_sessions, session_id, question, answer)
+
+                return jsonify({
+                    "answer": answer,
+                    "audio": audio_base64,
+                    "used_context": False,
+                    "used_web_search": False,
+                    "session_id": session_id
+                })
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
