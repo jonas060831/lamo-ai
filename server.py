@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-load_dotenv()
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from langchain_community.vectorstores import Chroma
@@ -12,7 +12,13 @@ from utils.searxng import searxng_search, should_search
 from utils.is_coding_question import is_coding_question
 app = Flask(__name__)
 CORS(app)
-PORT = os.getenv('PORT', 3000)
+
+env_name = os.getenv('APP_ENV', 'development')
+
+load_dotenv(f'.env.{env_name}')
+
+
+PORT = os.getenv('PORT', 8000)
 
 SESSION_TIMEOUT_HOURS = int(os.getenv('SESSION_TIMEOUT_HOURS', 2))
 
@@ -226,9 +232,11 @@ Answer:
             answer = result['response']
 
             save_to_history(chat_sessions, session_id, question, answer)
+            audio_base64 = generate_tts(answer)
 
             return jsonify({
                 "answer": answer,
+                "audio": audio_base64,
                 "used_context": True,
                 "relevance_score": float(docs[0][1]),
                 "session_id": session_id

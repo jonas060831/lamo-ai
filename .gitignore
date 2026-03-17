@@ -1,5 +1,6 @@
 #env variables
 .env
+.env.production
 
 #training data
 my_knowledge
@@ -10,3 +11,6 @@ db
 #do not include cache
 __pycache__/
 *.pyc
+
+#production
+production

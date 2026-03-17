@@ -68,7 +68,7 @@ if not chunked_docs:
 print(f"✅ Created {len(chunked_docs)} chunks")
 
 # -------- EMBEDDINGS & DB --------
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-large-en-v1.5")
 
 db = Chroma.from_documents(
     chunked_docs,
