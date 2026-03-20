@@ -11,6 +11,7 @@ from utils.sessions_helper import get_or_create_session, cleanup_old_sessions, b
 from utils.generate_tts import generate_tts
 from utils.searxng import searxng_search, should_search
 from utils.is_coding_question import is_coding_question
+from utils.generate_stt import generate_stt
 app = Flask(__name__)
 CORS(app)
 
@@ -423,6 +424,22 @@ Text:
             **parsed
         })
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+#file type .webm
+@app.route('/transcribe-audio', methods=['POST'])
+def transcribe_audio():
+    
+    try:
+        audio = request.files.get('audio') #from FormData
+
+        if not audio:
+            return jsonify({ "error": "No audio uploaded" }), 400
+        
+        text = generate_stt(audio)
+        
+        return jsonify({"text": text})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
