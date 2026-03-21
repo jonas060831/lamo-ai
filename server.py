@@ -12,8 +12,14 @@ from utils.generate_tts import generate_tts
 from utils.searxng import searxng_search, should_search
 from utils.is_coding_question import is_coding_question
 from utils.generate_stt import generate_stt
+
+
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/*": {
+        "origins": "*"
+    }
+})
 
 env_name = os.getenv('APP_ENV', 'development')
 
@@ -190,9 +196,13 @@ Answer:
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/voice-query', methods=['POST'])
+@app.route('/voice-query', methods=['POST', 'OPTIONS'])
 def voice_query():
     try:
+
+        if request.method == 'OPTIONS':
+            return '', 200
+
         data = request.get_json()
 
         if not data or 'question' not in data:
