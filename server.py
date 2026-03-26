@@ -12,7 +12,8 @@ from utils.generate_tts import generate_tts
 from utils.searxng import searxng_search, should_search
 from utils.is_coding_question import is_coding_question
 from utils.generate_stt import generate_stt
-
+from google.cloud import vision
+from google.oauth2 import service_account
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -36,6 +37,13 @@ session_timestamps = {}
 #load embeddings and database once server starts
 embeddings = HuggingFaceBgeEmbeddings()
 db = Chroma(persist_directory="./db", embedding_function=embeddings)
+
+#
+GOOGLE_SERVICE_ACCOUNT = os.getenv('GOOGLE_SERVICE_ACCOUNT')
+#supply json path
+googleCredentials = service_account.Credentials.from_service_account_file(GOOGLE_SERVICE_ACCOUNT)
+#initialize google vision api
+visionClient = vision.ImageAnnotatorClient(credentials=googleCredentials)
 
 @app.route('/clear-history', methods=['POST'])
 def clear_history():
@@ -452,7 +460,33 @@ def transcribe_audio():
         return jsonify({"text": text})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@app.route('/extract-receipt-details', methods=['POST'])
+def ocr_receipt():
 
+    try:
+        #get file from request
+        file = request.files.get("receipt")
+        if not file:
+            return jsonify({"error": "No file provided" }), 400
+        
+        content = file.read()
+
+        #send image to google vision
+        image = vision.Image(content=content)
+        response = visionClient.text_detection(image=image)
+
+        texts = response.text_annotations
+
+        if texts:
+            extracted_text = texts[0].description
+        else:
+            extracted_text = ""
+        
+        return jsonify({"text": extracted_text})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT, debug=True)
